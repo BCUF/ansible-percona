@@ -1,19 +1,16 @@
 ---
 # (do not put quotes on key id, for some reason it won't work)
-- name: "Obtaining percona public key"
-  apt_key:
-    keyserver: "keyserver.ubuntu.com"
-    id: 9334A25F8507EFA5
-
-- name: "Adding percona repository"
-  apt_repository:
-    repo: "deb http://repo.percona.com/apt {{ ansible_distribution_release }} main"
-    state: "present"
-
-- name: "Update apt cache"
+- name: "Install GNUPG2"
   apt:
-    update_cache: yes
-    cache_valid_time: 300
+    name: "gnupg2"
+
+- name: "Install python3"
+  apt:
+    name: "python3"
+
+- name: Fetch the repository packages from Percona web
+  apt:
+    deb: "https://repo.percona.com/apt/percona-release_latest.{{ ansible_distribution_release }}_all.deb"
 
 - name: "Install percona-release package (Percona version >= 8)"
   apt:
@@ -32,7 +29,7 @@
     - ansible_distribution_version is version_compare('20.04', '>=')
 
 - name: "Get the major version of python used to run ansible"
-  command: "{{ ansible_python_interpreter | default('/usr/bin/python') }} -c 'import sys; print(sys.version_info.major)'"
+  command: "{{ ansible_python_interpreter | default('/usr/bin/python3') }} -c 'import sys; print(sys.version_info.major)'"
   register: ansible_python_major
   changed_when: false
 
@@ -51,11 +48,23 @@
   when:
     - ansible_python_major.stdout == "3"
 
+- name: update APT Cache
+  become: yes
+  apt:
+    update_cache: yes
+    force_apt_get: yes
+
+ # This is necessary bevause LVM role use apt to install some package and if ubuntu is making an 
+    # upgrade at the same time the installation will fail!
+- name: Wait for any possibly running unattended upgrade to finish
+  become: yes
+  raw: systemd-run --property="After=apt-daily.service apt-daily-upgrade.service" --wait /bin/true
+
 - name: "Install percona packages and dependencies on Ubuntu (Percona version < 8)"
   apt:
     name:
-      - "percona-server-server-{{ mysql_version_major }}.{{ mysql_version_minor }}"
-      - "percona-server-client-{{ mysql_version_major }}.{{ mysql_version_minor }}"
+      - "percona-server-server-{{ mysql_version_major }}.{{ mysql_version_minor }}*"
+      - "percona-server-client-{{ mysql_version_major }}.{{ mysql_version_minor }}*"
       - "percona-toolkit"
       - "percona-xtrabackup"
     state: "present"
